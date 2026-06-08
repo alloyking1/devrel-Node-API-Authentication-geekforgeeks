@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
-const databaseName = "devreal-node-auth-db";
-const appName = "devreal-tutorial-nodejs-authentication-geeksforgeeks";
+const databaseName = "devrel-node-auth-db";
+const appName = "devrel-tutorial-nodejs-authentication-geeksforgeeks";
 
 const connectDB = async () => {
   try {

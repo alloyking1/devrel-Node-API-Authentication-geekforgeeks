@@ -14,6 +14,39 @@ const {
 
 const jwt = require("jsonwebtoken");
 
+const getRefreshTokenExpiryMs = () => {
+  const refreshDays = Number(
+    process.env.REFRESH_TOKEN_EXPIRES_DAYS
+  );
+
+  return refreshDays * 24 * 60 * 60 * 1000;
+};
+
+const getRefreshTokenCookieOptions = () => {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/api/auth",
+    maxAge: getRefreshTokenExpiryMs(),
+  };
+};
+
+const setRefreshTokenCookie = (res, refreshToken) => {
+  res.cookie(
+    "refreshToken",
+    refreshToken,
+    getRefreshTokenCookieOptions()
+  );
+};
+
+const clearRefreshTokenCookie = (res) => {
+  res.clearCookie("refreshToken", {
+    ...getRefreshTokenCookieOptions(),
+    maxAge: undefined,
+  });
+};
+
 const register = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -117,11 +150,8 @@ const login = async (req, res) => {
   
       // MFA DISABLED
       const accessToken = generateAccessToken(user);
-  
       const refreshToken = generateRefreshToken();
-  
       const refreshTokenHash = hashToken(refreshToken);
-  
       const expiresAt = new Date();
   
       expiresAt.setDate(
@@ -136,12 +166,13 @@ const login = async (req, res) => {
         ipAddress: req.ip,
         expiresAt,
       });
+
+      setRefreshTokenCookie(res, refreshToken);
   
       return res.status(200).json({
         success: true,
         message: "Login successful",
         accessToken,
-        refreshToken,
       });
     } catch (error) {
       console.error(error);
@@ -305,12 +336,13 @@ const login = async (req, res) => {
         ipAddress: req.ip,
         expiresAt,
       });
+
+      setRefreshTokenCookie(res, refreshToken);
   
       return res.status(200).json({
         success: true,
         message: "MFA login successful",
         accessToken,
-        refreshToken,
       });
     } catch (error) {
       console.error(error);
@@ -336,12 +368,12 @@ const login = async (req, res) => {
 
   const refreshAccessToken = async (req, res) => {
     try {
-      const { refreshToken } = req.body;
+      const refreshToken = req.cookies?.refreshToken;
   
       if (!refreshToken) {
         return res.status(401).json({
           success: false,
-          message: "Refresh token required",
+          message: "Refresh token cookie required",
         });
       }
   
@@ -353,6 +385,8 @@ const login = async (req, res) => {
       });
   
       if (!session) {
+        clearRefreshTokenCookie(res);
+
         return res.status(401).json({
           success: false,
           message: "Invalid session",
@@ -361,6 +395,8 @@ const login = async (req, res) => {
   
       // Expired session
       if (session.expiresAt < new Date()) {
+        clearRefreshTokenCookie(res);
+
         return res.status(401).json({
           success: false,
           message: "Session expired",
@@ -384,6 +420,8 @@ const login = async (req, res) => {
       session.refreshTokenHash = newRefreshTokenHash;
   
       await session.save();
+
+      setRefreshTokenCookie(res, newRefreshToken);
   
       // Generate new access token
       const accessToken = generateAccessToken(user);
@@ -391,7 +429,6 @@ const login = async (req, res) => {
       return res.status(200).json({
         success: true,
         accessToken,
-        refreshToken: newRefreshToken,
       });
     } catch (error) {
       console.error(error);
@@ -405,12 +442,12 @@ const login = async (req, res) => {
 
   const logout = async (req, res) => {
     try {
-      const { refreshToken } = req.body;
+      const refreshToken = req.cookies?.refreshToken;
   
       if (!refreshToken) {
         return res.status(400).json({
           success: false,
-          message: "Refresh token required",
+          message: "Refresh token cookie required",
         });
       }
   
@@ -425,6 +462,8 @@ const login = async (req, res) => {
           revokedAt: new Date(),
         }
       );
+
+      clearRefreshTokenCookie(res);
   
       return res.status(200).json({
         success: true,
@@ -451,6 +490,8 @@ const login = async (req, res) => {
           revokedAt: new Date(),
         }
       );
+
+      clearRefreshTokenCookie(res);
   
       return res.status(200).json({
         success: true,
